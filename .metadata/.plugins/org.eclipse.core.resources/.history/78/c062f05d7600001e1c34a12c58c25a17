@@ -1,0 +1,139 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2023 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "stm32f4xx.h"
+
+#define ADC_MAX_VALUE 4095  // Maximum ADC value
+#define PWM_PERIOD    1000  // PWM period value
+#define THRESHOLD     2000  // Perceptron threshold value
+
+// Function prototypes
+void SystemInit(void);
+void GPIO_Init(void);
+void ADC_Init(void);
+void PWM_Init(void);
+void ADC_IRQHandler(void);
+
+// Global variables
+volatile uint32_t adc_value;
+volatile uint32_t pwm_duty_cycle;
+
+int main(void)
+{
+    SystemInit();
+    GPIO_Init();
+    ADC_Init();
+    PWM_Init();
+
+    NVIC_EnableIRQ(ADC_IRQn); // Enable ADC interrupt
+
+    while (1)
+    {
+        if (pwm_duty_cycle >= THRESHOLD)
+        {
+            // Perform an action when the perceptron output exceeds the threshold
+            // Example: Turn on an LED, send a signal, etc.
+        }
+        else
+        {
+            // Perform another action when the perceptron output is below the threshold
+            // Example: Turn off an LED, stop a motor, etc.
+        }
+    }
+}
+
+void SystemInit(void)
+{
+    // Configure system clock
+    SystemCoreClock = 84000000; // Set the system clock to 84 MHz
+    RCC->CR |= RCC_CR_HSION; // Enable HSI oscillator
+    while ((RCC->CR & RCC_CR_HSIRDY) == 0); // Wait until HSI oscillator is ready
+    RCC->CFGR |= RCC_CFGR_SW_HSI; // Select HSI as the system clock source
+    while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSI); // Wait until HSI is used as the system clock
+    FLASH->ACR |= FLASH_ACR_PRFTEN | FLASH_ACR_ICEN | FLASH_ACR_DCEN | FLASH_ACR_LATENCY_2WS; // Configure Flash prefetch, instruction cache, data cache, and latency
+    RCC->CFGR |= RCC_CFGR_HPRE_DIV1 | RCC_CFGR_PPRE1_DIV4 | RCC_CFGR_PPRE2_DIV2; // Configure AHB, APB1, and APB2 prescalers
+    RCC->CR &= ~RCC_CR_PLLON; // Disable PLL
+    while ((RCC->CR & RCC_CR_PLLRDY) != 0); // Wait until PLL is ready
+    RCC->PLLCFGR = (8 << RCC_PLLCFGR_PLLM_Pos) | (336 << RCC_PLLCFGR_PLLN_Pos) | (0 << RCC_PLLCFGR_PLLP_Pos) | (7 << RCC_PLLCFGR_PLLQ_Pos) | RCC_PLLCFGR_PLLSRC_HSI; // Configure PLL multiplication factor, division factors, and source
+    RCC->CR |= RCC_CR_PLLON; // Enable PLL
+    while ((RCC->CR & RCC_CR_PLLRDY) == 0); // Wait until PLL is ready
+    RCC->CFGR &= ~RCC_CFGR_SW; // Reset system clock selection
+    RCC->CFGR |= RCC_CFGR_SW_PLL; // Select PLL as the system clock
+    while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL); // Wait until PLL is used as the system clock
+}
+
+void GPIO_Init(void)
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN; // Enable GPIOC clock
+
+    GPIOC->MODER |= GPIO_MODER_MODE0; // Configure PC0 as analog mode
+    GPIOC->PUPDR &= ~GPIO_PUPDR_PUPD0; // Disable pull-up and pull-down
+}
+
+void ADC_Init(void)
+{
+    RCC->APB2ENR |= RCC_APB2ENR_ADC1EN; // Enable ADC1 clock
+
+    ADC1->CR2 |= ADC_CR2_ADON; // Turn on ADC1
+
+    ADC1->SQR1 &= ~ADC_SQR1_L; // Configure regular channel sequence length as 1 conversion
+    ADC1->SQR3 = 10; // Select ADC channel 10 (PC0)
+
+    ADC1->CR2 |= ADC_CR2_ADON; // Turn on ADC1 (again)
+
+    ADC1->CR1 &= ~ADC_CR1_SCAN; // Disable scan mode
+    ADC1->CR1 &= ~ADC_CR1_DISCEN; // Disable discontinuous mode
+
+    ADC1->SMPR2 |= ADC_SMPR2_SMP10_0; // Set sampling time for ADC channel 10 to 3 cycles
+}
+
+void PWM_Init(void)
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN; // Enable GPIOB clock
+    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN; // Enable TIM3 clock
+
+    GPIOB->MODER |= GPIO_MODER_MODE4_1; // Configure PB4 as alternate function mode
+
+    GPIOB->AFR[0] |= GPIO_AF2_TIM3 << (4 * 4); // Select TIM3_CH1 alternate function for PB4
+
+    TIM3->PSC = 0; // Set prescaler value
+    TIM3->ARR = PWM_PERIOD - 1; // Set auto-reload value
+    TIM3->CCR1 = 0; // Set initial capture/compare value
+
+    TIM3->CCMR1 |= TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2; // Configure PWM mode 1
+    TIM3->CCMR1 &= ~TIM_CCMR1_OC1M_0;
+
+    TIM3->CCER |= TIM_CCER_CC1E; // Enable output compare for channel 1
+    TIM3->CR1 |= TIM_CR1_ARPE; // Enable auto-reload preload
+    TIM3->CR1 |= TIM_CR1_CEN; // Enable TIM3 counter
+}
+
+void ADC_IRQHandler(void)
+{
+    if (ADC1->SR & ADC_SR_EOC) // Check if end of conversion flag is set
+    {
+        adc_value = ADC1->DR; // Read ADC converted value
+        pwm_duty_cycle = (adc_value * PWM_PERIOD) / ADC_MAX_VALUE; // Calculate PWM duty cycle
+
+        TIM3->CCR1 = pwm_duty_cycle; // Update PWM duty cycle
+
+        ADC1->SR &= ~ADC_SR_EOC; // Clear end of conversion flag
+    }
+}
+

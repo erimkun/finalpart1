@@ -1,0 +1,123 @@
+/* USER CODE BEGIN Header */
+/**
+  ADC ve PWMyu TIM3 counter kullanarak oluşturduğum neural network pin outları ve pin inleri karta takılıcak olandiğer projerle göre ayarlama/
+gerekiyor pwm period ve maks adc value değişebilir threshholdayken işlemleri yapacağı için sistem onu da değiştirebiliriz*/
+#include "stm32f4xx.h"
+
+#define ADC_MAX_VALUE 4095  // Maximum ADC value
+#define PWM_PERIOD    1000  // PWM period value
+#define THRESHOLD     2000  // Perceptron threshold value
+
+// Gerekli functionları tanımlıyorum öncelikle
+void SystemInit(void);
+void GPIO_Init(void);
+void ADC_Init(void);
+void PWM_Init(void);
+void ADC_IRQHandler(void);
+
+// bunlar genel değişken olarak kullanıcak ondan onları integer olarak tanımladım
+volatile uint32_t adc_value;
+volatile uint32_t pwm_duty_cycle;
+// main function oluştuyorum ve system32 f dosyasından sysmtem init sildim çünkü onu düzenlememiz gerekiyordu
+int main(void)
+{
+    SystemInit();
+    GPIO_Init();
+    ADC_Init();
+    PWM_Init();
+
+    NVIC_EnableIRQ(ADC_IRQn); //adc nin intrupttla değiş sürekli çalışır halde olduğunu da denedim ama system kaynak kodunda hata verdi
+
+    while (1)
+    {
+        if (pwm_duty_cycle >= THRESHOLD)
+        {
+            // bu alandayken taklınca kartların işlevleri gerçekleşçek
+
+        }
+        else
+        {
+            // takılı değilken
+        }
+    }
+}
+
+void SystemInit(void)
+{
+    // system zamanı ayarlıyorz
+    SystemCoreClock = 84000000; // bu zamanı değiştirebilirz ben 84mhz verdim
+    RCC->CR |= RCC_CR_HSION; // frequancy ya da capacitor olarak akması için hsi gerekli
+    while ((RCC->CR & RCC_CR_HSIRDY) == 0);
+    RCC->CFGR |= RCC_CFGR_SW_HSI;
+    while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSI); /
+    FLASH->ACR |= FLASH_ACR_PRFTEN | FLASH_ACR_ICEN | FLASH_ACR_DCEN | FLASH_ACR_LATENCY_2WS;
+    RCC->CFGR |= RCC_CFGR_HPRE_DIV1 | RCC_CFGR_PPRE1_DIV4 | RCC_CFGR_PPRE2_DIV2;
+    RCC->CR &= ~RCC_CR_PLLON; // Bu kısımda hep hata alıyordum internette bulduğum bir kodda pll gerekli oldğunu söylüyordu ondan kullandım
+    while ((RCC->CR & RCC_CR_PLLRDY) != 0);
+    RCC->PLLCFGR = (8 << RCC_PLLCFGR_PLLM_Pos) | (336 << RCC_PLLCFGR_PLLN_Pos) | (0 << RCC_PLLCFGR_PLLP_Pos) | (7 << RCC_PLLCFGR_PLLQ_Pos) | RCC_PLLCFGR_PLLSRC_HSI; // Configure PLL multiplication factor, division factors, and source
+    RCC->CR |= RCC_CR_PLLON;
+    while ((RCC->CR & RCC_CR_PLLRDY) == 0);
+    RCC->CFGR &= ~RCC_CFGR_SW;
+    RCC->CFGR |= RCC_CFGR_SW_PLL;
+    while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL);
+}
+
+void GPIO_Init(void)// gpioc clock için gerekli fucntion
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
+
+    GPIOC->MODER |= GPIO_MODER_MODE0;
+    GPIOC->PUPDR &= ~GPIO_PUPDR_PUPD0;
+}
+
+void ADC_Init(void)
+{
+    RCC->APB2ENR |= RCC_APB2ENR_ADC1EN; // adc clcok
+
+    ADC1->CR2 |= ADC_CR2_ADON; // adc yi açtık
+
+    ADC1->SQR1 &= ~ADC_SQR1_L;
+    ADC1->SQR3 = 10;
+
+    ADC1->CR2 |= ADC_CR2_ADON;
+
+    ADC1->CR1 &= ~ADC_CR1_SCAN; //scanliyor
+    ADC1->CR1 &= ~ADC_CR1_DISCEN; // scani kapıyorz
+
+    ADC1->SMPR2 |= ADC_SMPR2_SMP1_0;
+}
+
+void PWM_Init(void)//tim3 kullanarak pwm yapmak için gerekli function
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN; // zamanı başlattık
+    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN; // TIM3 başlattık
+
+    GPIOB->MODER |= GPIO_MODER_MODE4_1;
+
+    GPIOB->AFR[0] |= GPIO_AF2_TIM3 << (4 * 4);
+
+    TIM3->PSC = 0; // 0ladım tim 3 ü
+    TIM3->ARR = PWM_PERIOD - 1; // priod zamanı dolunca 1 yapıyorz değeri
+    TIM3->CCR1 = 0;
+
+    TIM3->CCMR1 |= TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2;
+    TIM3->CCMR1 &= ~TIM_CCMR1_OC1M_0;
+
+    TIM3->CCER |= TIM_CCER_CC1E; // chanel 1 e
+    TIM3->CR1 |= TIM_CR1_ARPE; //
+    TIM3->CR1 |= TIM_CR1_CEN; //
+}
+
+void ADC_IRQHandler(void)// controller gibi düşünebilriz
+{
+    if (ADC1->SR & ADC_SR_EOC)
+    {
+        adc_value = ADC1->DR; // adcyi okuyor
+        pwm_duty_cycle = (adc_value * PWM_PERIOD) / ADC_MAX_VALUE; // pwm 1 mi diye bakıyorz tim3ten oluşturduğumuz cylce spnucu
+
+        TIM3->CCR1 = pwm_duty_cycle; //
+
+        ADC1->SR &= ~ADC_SR_EOC; // clc kontrol noktalarını
+    }
+}
+

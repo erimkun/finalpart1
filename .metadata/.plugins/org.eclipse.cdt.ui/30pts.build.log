@@ -1,0 +1,17 @@
+15:19:24 **** Incremental Build of configuration Debug for project 30pts ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/system_stm32f4xx.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xC -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/system_stm32f4xx.d" -MT"Core/Src/system_stm32f4xx.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/system_stm32f4xx.o"
+arm-none-eabi-gcc -o "30pts.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\User\Desktop\30pts\30pts\STM32F401CBUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="30pts.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: 30pts.elf
+ 
+arm-none-eabi-size   30pts.elf 
+arm-none-eabi-objdump -h -S  30pts.elf  > "30pts.list"
+   text	   data	    bss	    dec	    hex	filename
+   1516	     16	   1576	   3108	    c24	30pts.elf
+Finished building: default.size.stdout
+ 
+Finished building: 30pts.list
+ 
+
+15:19:25 Build Finished. 0 errors, 0 warnings. (took 1s.16ms)
+
